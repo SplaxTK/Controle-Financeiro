@@ -145,4 +145,96 @@ class FinancaTest extends TestCase
 
         $this->assertEquals(404, $response->getStatusCode());
     }
+
+    public function testDeleteCategoriaComLancamentoVinculadoRetornaConflito(): void
+    {
+        $app = $this->criarApp();
+
+        $request = $this->criarRequest(
+            'POST',
+            '/categoria',
+            ['nome' => 'Categoria sem vínculo', 'tipo' => 'despesa']
+        );
+        $response = $app->handle($request);
+
+        $this->assertEquals(201, $response->getStatusCode());
+        $categoria = json_decode((string) $response->getBody(), true);
+
+        $request = $this->criarRequest('POST', '/lancamento', ['categoria_id' => $categoria['id']]);
+        $response = $app->handle($request);
+
+        $this->assertEquals(201, $response->getStatusCode());
+
+        $request = $this->criarRequest('GET', '/categoria/1');
+        $response = $app->handle($request);
+
+        $this->assertEquals(200, $response->getStatusCode());
+
+        $request = $this->criarRequest('DELETE', '/categoria/' . $categoria['id']);
+        $response = $app->handle($request);
+
+        $this->assertEquals(409, $response->getStatusCode());
+        $this->assertEquals(
+            'Não é possível excluir uma categoria que possui lançamentos vinculados',
+            json_decode((string) $response->getBody(), true)['erro']
+        );
+
+        $request = $this->criarRequest('GET', '/categoria/' . $categoria['id']);
+        $response = $app->handle($request);
+
+        $this->assertEquals(200, $response->getStatusCode());
+    }
+
+    public function testDeleteCategoriaSemLancamentosVinculados(): void
+    {
+        $app = $this->criarApp();
+
+        $request = $this->criarRequest(
+            'POST',
+            '/categoria',
+            ['nome' => 'Categoria sem lançamento', 'tipo' => 'despesa']
+        );
+        $response = $app->handle($request);
+
+        $this->assertEquals(201, $response->getStatusCode());
+        $categoria = json_decode((string) $response->getBody(), true);
+
+        $request = $this->criarRequest('DELETE', '/categoria/' . $categoria['id']);
+        $response = $app->handle($request);
+
+        $this->assertEquals(204, $response->getStatusCode());
+    }
+
+    public function testConsultarCategoriaNaoAlteraListaDeCategorias(): void
+    {
+        $app = $this->criarApp();
+
+        $request = $this->criarRequest('GET', '/categoria/1');
+        $response = $app->handle($request);
+
+        $this->assertEquals(200, $response->getStatusCode());
+
+        $request = $this->criarRequest('GET', '/categoria');
+        $response = $app->handle($request);
+
+        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertCount(4, json_decode((string) $response->getBody(), true));
+    }
+
+    public function testGetLancamentosListaEConsultaPorId(): void
+    {
+        $app = $this->criarApp();
+
+        $request = $this->criarRequest('GET', '/lancamento');
+        $response = $app->handle($request);
+
+        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertCount(4, json_decode((string) $response->getBody(), true));
+
+        $request = $this->criarRequest('GET', '/lancamento/1');
+        $response = $app->handle($request);
+
+        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertEquals(1, json_decode((string) $response->getBody(), true)['id']);
+    }
 }
