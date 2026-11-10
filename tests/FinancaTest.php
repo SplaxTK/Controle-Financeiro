@@ -237,4 +237,146 @@ class FinancaTest extends TestCase
         $this->assertEquals(200, $response->getStatusCode());
         $this->assertEquals(1, json_decode((string) $response->getBody(), true)['id']);
     }
+
+    public function testGetLancamentosFiltraPorPeriodo(): void
+    {
+        $app = $this->criarApp();
+
+        $request = $this->criarRequest(
+            'GET',
+            '/lancamento?data_inicial=2023-01-15&data_final=2023-01-20'
+        );
+        $response = $app->handle($request);
+
+        $this->assertEquals(200, $response->getStatusCode());
+        $lancamentos = json_decode((string) $response->getBody(), true);
+        $this->assertSame([1, 3], array_column($lancamentos, 'id'));
+    }
+
+    public function testGetLancamentosFiltraPorCategoriaETipo(): void
+    {
+        $app = $this->criarApp();
+
+        $request = $this->criarRequest(
+            'GET',
+            '/lancamento?data_inicial=2023-01-01&data_final=2023-01-20&categoria_id=2&tipo=despesa'
+        );
+        $response = $app->handle($request);
+
+        $this->assertEquals(200, $response->getStatusCode());
+        $lancamentos = json_decode((string) $response->getBody(), true);
+        $this->assertSame([2], array_column($lancamentos, 'id'));
+
+        $request = $this->criarRequest(
+            'GET',
+            '/lancamento?categoria_id=2&tipo=receita'
+        );
+        $response = $app->handle($request);
+
+        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertSame([], json_decode((string) $response->getBody(), true));
+
+        $request = $this->criarRequest('GET', '/lancamento?tipo=receita');
+        $response = $app->handle($request);
+
+        $this->assertEquals(200, $response->getStatusCode());
+        $lancamentos = json_decode((string) $response->getBody(), true);
+        $this->assertSame([1, 3], array_column($lancamentos, 'id'));
+    }
+
+    public function testGetLancamentosPorDataNaUrl(): void
+    {
+        $app = $this->criarApp();
+
+        $request = $this->criarRequest('GET', '/lancamento/2023/01/15');
+        $response = $app->handle($request);
+
+        $this->assertEquals(200, $response->getStatusCode());
+        $lancamentos = json_decode((string) $response->getBody(), true);
+        $this->assertSame([1], array_column($lancamentos, 'id'));
+    }
+
+    public function testGetLancamentosRejeitaPeriodoInvalido(): void
+    {
+        $app = $this->criarApp();
+
+        $request = $this->criarRequest(
+            'GET',
+            '/lancamento?data_inicial=2023-02-01&data_final=2023-01-01'
+        );
+        $response = $app->handle($request);
+
+        $this->assertEquals(400, $response->getStatusCode());
+        $this->assertArrayHasKey(
+            'erro',
+            json_decode((string) $response->getBody(), true)
+        );
+    }
+
+    public function testLancamentoCriadoComDataPodeSerFiltrado(): void
+    {
+        $app = $this->criarApp();
+
+        $request = $this->criarRequest(
+            'POST',
+            '/lancamento',
+            [
+                'categoria_id' => 1,
+                'descricao' => 'Salário de fevereiro',
+                'valor' => 5000,
+                'data' => '2023-02-01',
+            ]
+        );
+        $response = $app->handle($request);
+
+        $this->assertEquals(201, $response->getStatusCode());
+
+        $request = $this->criarRequest(
+            'GET',
+            '/lancamento?data_inicial=2023-02-01&data_final=2023-02-28'
+        );
+        $response = $app->handle($request);
+
+        $this->assertEquals(200, $response->getStatusCode());
+        $lancamentos = json_decode((string) $response->getBody(), true);
+        $this->assertCount(1, $lancamentos);
+        $this->assertSame('Salário de fevereiro', $lancamentos[0]['descricao']);
+    }
+
+    public function testGetSaldoEGetReceitasCalculamPelosTiposDasCategorias(): void
+    {
+        $app = $this->criarApp();
+
+        $response = $app->handle($this->criarRequest('GET', '/saldo'));
+        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertSame(
+            ['saldo' => 4700],
+            json_decode((string) $response->getBody(), true)
+        );
+
+        $response = $app->handle($this->criarRequest('GET', '/receitas'));
+        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertSame(
+            ['total_receitas' => 7000],
+            json_decode((string) $response->getBody(), true)
+        );
+    }
+
+    public function testGetSaldoEGetReceitasConsideramNovosLancamentos(): void
+    {
+        $app = $this->criarApp();
+
+        $request = $this->criarRequest(
+            'POST',
+            '/lancamento',
+            ['categoria_id' => 2, 'valor' => 100]
+        );
+        $this->assertEquals(201, $app->handle($request)->getStatusCode());
+
+        $response = $app->handle($this->criarRequest('GET', '/saldo'));
+        $this->assertEquals(4600, json_decode((string) $response->getBody(), true)['saldo']);
+
+        $response = $app->handle($this->criarRequest('GET', '/receitas'));
+        $this->assertEquals(7000, json_decode((string) $response->getBody(), true)['total_receitas']);
+    }
 }
